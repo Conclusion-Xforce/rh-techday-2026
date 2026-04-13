@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+openai>=1.0
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation-fastapi
+traceloop-sdk

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gardening Advisor</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f0f7f0; color: #333; min-height: 100vh; display: flex; justify-content: center; padding: 2rem; }
+        .container { max-width: 700px; width: 100%; }
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #2d5a27; }
+        .subtitle { color: #666; margin-bottom: 1.5rem; }
+        .input-group { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1.5rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+        input[type="text"], textarea { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; font-family: inherit; }
+        input:focus, textarea:focus { outline: none; border-color: #4a9d4a; box-shadow: 0 0 0 2px rgba(74,157,74,0.2); }
+        textarea { resize: vertical; min-height: 80px; }
+        .field + .field { margin-top: 1rem; }
+        button { background: #4a9d4a; color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; width: 100%; margin-top: 1rem; }
+        button:hover { background: #3d8b3d; }
+        button:disabled { background: #aaa; cursor: not-allowed; }
+        .results { display: none; }
+        .weather-box { background: #e8f5e8; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+        .weather-box h3 { font-size: 1rem; color: #2d5a27; margin-bottom: 0.75rem; }
+        .weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+        .weather-item { font-size: 0.9rem; }
+        .weather-item span { color: #666; }
+        .advice-box { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .advice-box h3 { font-size: 1.1rem; color: #2d5a27; margin-bottom: 0.75rem; }
+        .advice-text { line-height: 1.7; white-space: pre-wrap; }
+        .meta { font-size: 0.8rem; color: #888; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid #eee; }
+        .loading { text-align: center; padding: 2rem; color: #666; }
+        .error { background: #fef2f2; color: #b91c1c; padding: 1rem; border-radius: 6px; margin-top: 1rem; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gardening Advisor</h1>
+        <p class="subtitle">Get personalized gardening advice based on your local weather</p>
+
+        <div class="input-group">
+            <div class="field">
+                <label for="location">Location</label>
+                <input type="text" id="location" placeholder="e.g. Utrecht, London, Tokyo">
+            </div>
+            <div class="field">
+                <label for="question">Your gardening question</label>
+                <textarea id="question" placeholder="e.g. What vegetables can I plant now?"></textarea>
+            </div>
+            <button id="advise-btn" onclick="getAdvice()">Get Advice</button>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="results" id="results">
+            <div class="loading" id="loading">Fetching weather and generating advice...</div>
+            <div id="content" style="display:none">
+                <div class="weather-box">
+                    <h3>Current Conditions</h3>
+                    <div class="weather-grid" id="weather-grid"></div>
+                </div>
+                <div class="advice-box">
+                    <h3>Advice</h3>
+                    <div class="advice-text" id="advice-text"></div>
+                    <div class="meta" id="meta"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function getAdvice() {
+            const location = document.getElementById('location').value.trim();
+            const question = document.getElementById('question').value.trim();
+            if (!location || !question) return;
+
+            const btn = document.getElementById('advise-btn');
+            const results = document.getElementById('results');
+            const loading = document.getElementById('loading');
+            const content = document.getElementById('content');
+            const error = document.getElementById('error');
+
+            btn.disabled = true;
+            error.style.display = 'none';
+            results.style.display = 'block';
+            loading.style.display = 'block';
+            content.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/advise', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ location, question })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Request failed');
+                }
+
+                const data = await res.json();
+                loading.style.display = 'none';
+                content.style.display = 'block';
+
+                const w = data.weather;
+                document.getElementById('weather-grid').innerHTML = `
+                    <div class="weather-item"><span>Location:</span> ${w.location}, ${w.country}</div>
+                    <div class="weather-item"><span>Season:</span> ${w.season}</div>
+                    <div class="weather-item"><span>Temperature:</span> ${w.temperature}°C</div>
+                    <div class="weather-item"><span>Humidity:</span> ${w.humidity}%</div>
+                    <div class="weather-item"><span>Precipitation:</span> ${w.precipitation} mm</div>
+                    <div class="weather-item"><span>Wind:</span> ${w.wind_speed} km/h</div>
+                `;
+
+                document.getElementById('advice-text').textContent = data.advice;
+                document.getElementById('meta').textContent = `Model: ${data.model} | Tokens: ${data.input_tokens} in / ${data.output_tokens} out`;
+
+            } catch (e) {
+                loading.style.display = 'none';
+                results.style.display = 'none';
+                error.textContent = e.message;
+                error.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

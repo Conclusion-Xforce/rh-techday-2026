@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chatbot</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
+
+        /* Login */
+        .login-screen { display: flex; justify-content: center; align-items: center; height: 100vh; background: #f5f5f5; }
+        .login-box { background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 340px; }
+        .login-box h1 { font-size: 1.5rem; margin-bottom: 1.5rem; text-align: center; }
+        .login-box label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+        .login-box input { width: 100%; padding: 0.6rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; margin-bottom: 1rem; }
+        .login-box input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+        .login-box button { width: 100%; padding: 0.7rem; background: #6366f1; color: #fff; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+        .login-box button:hover { background: #5558e6; }
+        .login-error { color: #b91c1c; font-size: 0.85rem; margin-bottom: 0.5rem; display: none; }
+
+        /* Chat */
+        .chat-screen { display: none; flex-direction: column; height: 100vh; }
+        .chat-header { background: #6366f1; color: #fff; padding: 0.75rem 1.25rem; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header h1 { font-size: 1.1rem; }
+        .header-right { display: flex; align-items: center; gap: 1rem; font-size: 0.85rem; }
+        .header-right button { background: rgba(255,255,255,0.2); color: #fff; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .header-right button:hover { background: rgba(255,255,255,0.3); }
+        .token-counter { background: rgba(255,255,255,0.15); padding: 0.3rem 0.6rem; border-radius: 4px; }
+
+        .messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+        .message { max-width: 75%; padding: 0.75rem 1rem; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
+        .message.user { align-self: flex-end; background: #6366f1; color: #fff; border-bottom-right-radius: 4px; }
+        .message.assistant { align-self: flex-start; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); border-bottom-left-radius: 4px; }
+        .message.typing { color: #999; font-style: italic; }
+
+        .chat-input { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; background: #fff; border-top: 1px solid #eee; }
+        .chat-input input { flex: 1; padding: 0.7rem; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; }
+        .chat-input input:focus { outline: none; border-color: #6366f1; }
+        .chat-input button { padding: 0.7rem 1.25rem; background: #6366f1; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+        .chat-input button:disabled { background: #aaa; }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div class="login-screen" id="login-screen">
+        <div class="login-box">
+            <h1>AI Chatbot</h1>
+            <div class="login-error" id="login-error"></div>
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="participant01">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Password">
+            <button onclick="login()">Log In</button>
+        </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div class="chat-screen" id="chat-screen">
+        <div class="chat-header">
+            <h1>AI Chatbot</h1>
+            <div class="header-right">
+                <span class="token-counter">Tokens: <span id="total-tokens">0</span></span>
+                <button onclick="clearHistory()">Clear</button>
+                <button onclick="logout()">Logout</button>
+            </div>
+        </div>
+        <div class="messages" id="messages"></div>
+        <div class="chat-input">
+            <input type="text" id="message-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMessage()">
+            <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let totalTokens = 0;
+
+        function getToken() { return sessionStorage.getItem('chat_token'); }
+        function setToken(t) { sessionStorage.setItem('chat_token', t); }
+        function clearToken() { sessionStorage.removeItem('chat_token'); }
+
+        function showChat() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+            loadHistory();
+        }
+
+        function showLogin() {
+            document.getElementById('login-screen').style.display = 'flex';
+            document.getElementById('chat-screen').style.display = 'none';
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const err = document.getElementById('login-error');
+            err.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.detail || 'Login failed');
+                }
+                const data = await res.json();
+                setToken(data.token);
+                showChat();
+            } catch (e) {
+                err.textContent = e.message;
+                err.style.display = 'block';
+            }
+        }
+
+        async function logout() {
+            const token = getToken();
+            if (token) {
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            clearToken();
+            document.getElementById('messages').innerHTML = '';
+            totalTokens = 0;
+            document.getElementById('total-tokens').textContent = '0';
+            showLogin();
+        }
+
+        async function loadHistory() {
+            const token = getToken();
+            if (!token) return;
+            try {
+                const res = await fetch('/api/history', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.status === 401) { clearToken(); showLogin(); return; }
+                const data = await res.json();
+                const container = document.getElementById('messages');
+                container.innerHTML = '';
+                totalTokens = 0;
+                data.messages.forEach(m => {
+                    addMessage(m.role, m.content);
+                    if (m.token_count) totalTokens += m.token_count;
+                });
+                document.getElementById('total-tokens').textContent = totalTokens;
+                container.scrollTop = container.scrollHeight;
+            } catch (e) {
+                console.error('Failed to load history', e);
+            }
+        }
+
+        function addMessage(role, content) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.textContent = content;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return div;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const btn = document.getElementById('send-btn');
+            btn.disabled = true;
+            input.value = '';
+
+            addMessage('user', text);
+            const typing = addMessage('assistant', 'Thinking...');
+            typing.classList.add('typing');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                if (res.status === 401) { clearToken(); showLogin(); return; }
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Request failed');
+                }
+
+                const data = await res.json();
+                typing.remove();
+                addMessage('assistant', data.response);
+
+                totalTokens += (data.input_tokens || 0) + (data.output_tokens || 0);
+                document.getElementById('total-tokens').textContent = totalTokens;
+
+            } catch (e) {
+                typing.textContent = `Error: ${e.message}`;
+                typing.classList.remove('typing');
+            } finally {
+                btn.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function clearHistory() {
+            const token = getToken();
+            if (!token) return;
+            await fetch('/api/clear', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            document.getElementById('messages').innerHTML = '';
+            totalTokens = 0;
+            document.getElementById('total-tokens').textContent = '0';
+        }
+
+        // Auto-login if session exists
+        if (getToken()) { showChat(); } else { showLogin(); }
+    </script>
+</body>
+</html>

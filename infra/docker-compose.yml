@@ -1,0 +1,75 @@
+services:
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: workshop
+      POSTGRES_PASSWORD: workshop
+      POSTGRES_DB: workshop
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app1:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.app
+      args:
+        APP_DIR: app1-recipes
+    ports:
+      - "8001:8000"
+    env_file: .env
+    environment:
+      OTEL_SERVICE_NAME: recipe-generator
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app2:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.app
+      args:
+        APP_DIR: app2-gardening
+    ports:
+      - "8002:8000"
+    env_file: .env
+    environment:
+      OTEL_SERVICE_NAME: gardening-advisor
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app3:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.app
+      args:
+        APP_DIR: app3-chatbot
+    ports:
+      - "8003:8000"
+    env_file: .env
+    environment:
+      OTEL_SERVICE_NAME: chatbot
+    depends_on:
+      db:
+        condition: service_healthy
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml
+    profiles:
+      - debug
+
+volumes:
+  pgdata:
