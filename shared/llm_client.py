@@ -12,7 +12,7 @@ def _get_client() -> AsyncOpenAI:
     if _client is None:
         _client = AsyncOpenAI(
             base_url=os.environ["VLLM_BASE_URL"],
-            api_key="unused",  # vLLM doesn't require a real key
+            api_key=os.environ["VLLM_API_KEY"], 
             timeout=120.0,
         )
     return _client

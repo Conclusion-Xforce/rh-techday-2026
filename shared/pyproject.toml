@@ -16,3 +16,9 @@ dependencies = [
     "opentelemetry-instrumentation-psycopg2",
     "traceloop-sdk",
 ]
+
+[tool.setuptools]
+packages = ["shared"]
+
+[tool.setuptools.package-dir]
+shared = "."
