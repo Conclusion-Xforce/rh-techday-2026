@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from traceloop.sdk.decorators import workflow
+
 from shared.telemetry import init_telemetry
 from shared.llm_client import complete
 
@@ -33,6 +35,7 @@ async def health():
 
 
 @app.post("/api/generate")
+@workflow(name="generate-recipe")
 async def generate(req: GenerateRequest):
     if not req.ingredients:
         raise HTTPException(status_code=400, detail="At least one ingredient is required")

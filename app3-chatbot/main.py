@@ -9,6 +9,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
+from traceloop.sdk import Traceloop
+from traceloop.sdk.decorators import workflow
+
 from shared.telemetry import init_telemetry
 from shared.llm_client import complete
 from sqlalchemy import text
@@ -74,8 +77,12 @@ async def logout(authorization: str = Header(None), db: DBSession = Depends(get_
 
 
 @app.post("/api/chat")
+@workflow(name="chat-turn")
 async def chat(req: ChatRequest, auth: tuple = Depends(get_current_user)):
     user_id, db = auth
+
+    # Attach conversation context so all spans in this turn carry gen_ai.conversation.id
+    Traceloop.set_association_properties({"conversation_id": str(user_id)})
 
     # Load conversation history
     with tracer.start_as_current_span("load-history"):
@@ -101,7 +108,7 @@ async def chat(req: ChatRequest, auth: tuple = Depends(get_current_user)):
             messages.append({"role": row.role, "content": row.content})
         messages.append({"role": "user", "content": req.message})
 
-        span.set_attribute("conversation.length", len(history_rows))
+        span.set_attribute("gen_ai.conversation.message_count", len(history_rows))
         span.set_attribute("prompt.total_messages", len(messages))
 
     # Call LLM
