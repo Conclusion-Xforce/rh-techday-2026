@@ -1,30 +1,36 @@
 import os
 
+# Must be set before any OTel/metric exporter is initialized
+os.environ.setdefault("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta")
+os.environ.setdefault("TRACELOOP_TELEMETRY", "false")
+
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.resources import Resource
+
+# Cluster-internal BindPlane node agent (HTTP OTLP, no auth required)
+_DEFAULT_OTLP_ENDPOINT = "http://bindplane-node-agent.bindplane-agent.svc.cluster.local:4318"
 
 
 def init_telemetry() -> trace.Tracer:
     service_name = os.environ.get("OTEL_SERVICE_NAME", "unknown-service")
-    resource = Resource.create({"service.name": service_name})
-    provider = TracerProvider(resource=resource)
-
     exporter_mode = os.environ.get("OTEL_EXPORTER", "otlp").lower()
+
     if exporter_mode == "console":
-        from opentelemetry.sdk.trace.export import (
-            SimpleSpanProcessor,
-            ConsoleSpanExporter,
-        )
+        # Local dev: print spans to stdout, skip Traceloop
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter
 
+        resource = Resource.create({"service.name": service_name})
+        provider = TracerProvider(resource=resource)
         provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        trace.set_tracer_provider(provider)
     else:
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,
-        )
+        # Production: Traceloop owns the TracerProvider + OpenAI auto-instrumentation.
+        # It detects the ProxyTracerProvider and registers its own provider globally,
+        # which the auto-instrumentors below will then pick up.
+        from traceloop.sdk import Traceloop
 
-        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", _DEFAULT_OTLP_ENDPOINT)
         headers_str = os.environ.get("OTEL_EXPORTER_OTLP_HEADERS", "")
         headers = {}
         if headers_str:
@@ -33,44 +39,31 @@ def init_telemetry() -> trace.Tracer:
                     k, v = pair.split("=", 1)
                     headers[k.strip()] = v.strip()
 
-        exporter = OTLPSpanExporter(
-            endpoint=f"{endpoint}/v1/traces" if endpoint else None,
+        Traceloop.init(
+            app_name=service_name,
+            api_endpoint=endpoint,
             headers=headers or None,
+            disable_batch=False,
+            should_enrich_metrics=True,
+            resource_attributes={"service.name": service_name},
         )
-        provider.add_span_processor(BatchSpanProcessor(exporter))
 
-    trace.set_tracer_provider(provider)
-
-    # Auto-instrumentors — each is conditional on the package being installed
+    # Auto-instrumentors attach to whatever TracerProvider is now globally registered
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
         FastAPIInstrumentor().instrument()
     except ImportError:
         pass
 
     try:
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-
         HTTPXClientInstrumentor().instrument()
     except ImportError:
         pass
 
     try:
         from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
-
         Psycopg2Instrumentor().instrument()
-    except ImportError:
-        pass
-
-    # Traceloop (openllmetry) for LLM span capture
-    try:
-        from traceloop.sdk import Traceloop
-
-        Traceloop.init(
-            app_name=service_name,
-            disable_batch=exporter_mode == "console",
-        )
     except ImportError:
         pass
 
