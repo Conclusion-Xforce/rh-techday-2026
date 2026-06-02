@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from traceloop.sdk.decorators import workflow
+
 from shared.telemetry import init_telemetry
 from shared.llm_client import complete
 from weather import geocode, get_weather, get_season
@@ -34,6 +36,7 @@ async def health():
 
 
 @app.post("/api/advise")
+@workflow(name="gardening-advice")
 async def advise(req: AdviseRequest):
     if not req.location.strip():
         raise HTTPException(status_code=400, detail="Location is required")
